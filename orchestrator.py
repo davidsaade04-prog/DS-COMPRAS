@@ -31,7 +31,21 @@ from mock_adapters import MockSourceAAdapter, MockSourceBAdapter
 from mock_promotions import MockPromotionCatalog
 from search import SearchCriteria
 from domain import PaymentContext, PriceResult
+from orchestration import ExtractedIntent, IntentType, TaskPlan, PolicyDecision
+from memory_store import MemoryStore, get_memory_store
 from decimal import Decimal, InvalidOperation
+
+# Respuestas cortas para resolver una confirmación pendiente (H6). Se
+# interpretan de forma DETERMINISTA a propósito - una decisión de privacidad
+# o borrado no la interpreta el LLM (mismo principio que V2.1 §10.3 aplica
+# acá: nada crítico queda librado a que el modelo "entienda bien").
+_AFIRMATIVO = {"si", "sí", "dale", "confirmo", "ok", "okay", "de acuerdo", "acepto", "aceptar", "claro", "obvio"}
+_NEGATIVO = {"no", "cancelar", "cancelo", "mejor no", "paso", "nel"}
+
+
+def _primera_palabra(text: str) -> str:
+    limpio = text.strip().lower().split(" ")[0]
+    return limpio.strip(".,!?¡¿")
 
 
 def _default_intent_router() -> IntentRouter:
@@ -61,6 +75,7 @@ class Orchestrator:
         ranking_engine: RankingEngine | None = None,
         buy_wait_engine: BuyWaitEngine | None = None,
         promotion_catalog: MockPromotionCatalog | None = None,
+        memory_store: MemoryStore | None = None,
     ):
         # Inyección de dependencias: permite testear cada pieza aislada y
         # reemplazar cualquier mock por una implementación real sin tocar
@@ -76,9 +91,10 @@ class Orchestrator:
         self.pricing_engine = pricing_engine or PricingEngine()
         self.ranking_engine = ranking_engine or RankingEngine()
         self.buy_wait_engine = buy_wait_engine or BuyWaitEngine()
-        # TODO(H6): reemplazar por Memory & Consent real. Hoy es un catálogo
-        # fijo, igual que las fuentes mock de H3.
+        # TODO(H8+): reemplazar por catálogo de promociones real. Hoy es un
+        # catálogo fijo, igual que las fuentes mock de H3.
         self.promotion_catalog = promotion_catalog or MockPromotionCatalog()
+        self.memory_store = memory_store or get_memory_store()
 
     def run(self, request: OrchestratorRequest) -> OrchestrationResult:
         trace: list[TraceStep] = [TraceStep(
@@ -86,8 +102,82 @@ class Orchestrator:
             detail=f"router={type(self.intent_router).__name__}",
         )]
 
+        # --- H6: resolver una confirmación pendiente ANTES que nada más
+        # (consentimiento de guardar banco/tarjeta, o confirmación de
+        # borrado). Se interpreta con reglas fijas, no con el LLM: una
+        # decisión de privacidad no debe depender de que el modelo
+        # "entienda bien" la respuesta.
+        pending = self.memory_store.get_pending_action(request.session_id)
+        if pending:
+            return self._resolver_pendiente(request, pending, trace)
+
         intent = self.intent_router.extract(request.message)
         trace.append(TraceStep(step="intent_classified", detail=intent.intent_type.value))
+
+        # --- H6: los 3 intents de memoria se resuelven acá directo, sin
+        # pasar por Task Planner/Policy/Search - no tiene sentido "buscar
+        # ofertas" para "olvidá mis datos bancarios".
+        if intent.intent_type == IntentType.BORRAR_MEMORIA:
+            self.memory_store.set_pending_action(request.session_id, {"type": "confirmar_borrado"})
+            return self._resultado_directo(
+                intent, trace,
+                "Esto va a borrar tu banco y tarjeta guardados, de forma permanente. "
+                "¿Confirmás? (respondé sí o no)",
+            )
+
+        if intent.intent_type == IntentType.GESTIONAR_MEMORIA_BANCARIA:
+            banco = intent.entities.get("banco")
+            tarjeta = intent.entities.get("tarjeta")
+            if not banco and not tarjeta:
+                return self._resultado_directo(intent, trace, "¿Qué banco o tarjeta querés que recuerde?")
+            self.memory_store.set_pending_action(
+                request.session_id, {"type": "consentir_banco", "banco": banco, "tarjeta": tarjeta}
+            )
+            desc = " y ".join(x for x in [banco, tarjeta] if x)
+            return self._resultado_directo(
+                intent, trace,
+                f"¿Querés que recuerde {desc} para futuras búsquedas? (respondé sí o no)",
+            )
+
+        if intent.intent_type == IntentType.CONSULTAR_MEMORIA:
+            guardado = self.memory_store.get_payment_context(request.user_id)
+            if guardado and (guardado.banco or guardado.tarjeta):
+                detalle = " y ".join(x for x in [guardado.banco, guardado.tarjeta] if x)
+                msg = f"Tengo guardado: {detalle}."
+            else:
+                msg = "No tengo ningún dato bancario guardado tuyo."
+            return self._resultado_directo(intent, trace, msg)
+
+        # --- H6: continuidad de conversación. Lo dicho en ESTE mensaje
+        # siempre pisa lo guardado; lo guardado solo rellena lo que falta.
+        # Esto arregla casos como "¿algo más económico?" sin repetir todo
+        # de nuevo, y separa dos cosas distintas a propósito:
+        #   - memoria de SESIÓN (categoría, urgencia): no requiere
+        #     consentimiento especial, es conversación normal (V2.1 §7.1).
+        #   - memoria FINANCIERA persistida (banco/tarjeta): solo se usa acá
+        #     si ya fue consentida explícitamente en algún momento.
+        session_entities = self.memory_store.get_session_entities(request.session_id)
+        merged_entities = {**session_entities, **intent.entities}
+
+        guardado = self.memory_store.get_payment_context(request.user_id)
+        if guardado:
+            if "banco" not in merged_entities and guardado.banco:
+                merged_entities["banco"] = guardado.banco
+            if "tarjeta" not in merged_entities and guardado.tarjeta:
+                merged_entities["tarjeta"] = guardado.tarjeta
+
+        intent.entities = merged_entities
+        self.memory_store.save_session_entities(request.session_id, merged_entities)
+
+        # Bug real detectado en pruebas H6: una intención "desconocida" como
+        # "¿algo más económico?" traía la categoría bien heredada de la
+        # sesión (merged_entities), pero el Task Planner decide el flujo
+        # mirando intent_type, no las entidades - seguía preguntando "¿qué
+        # producto buscás?" a pesar de ya saberlo. Si heredamos una
+        # categoría utilizable, la intención se "asciende" a búsqueda.
+        if intent.intent_type == IntentType.DESCONOCIDA and merged_entities.get("categoria"):
+            intent.intent_type = IntentType.BUSCAR_PRODUCTO
+            intent.missing_critical_fields = []
 
         plan = self.task_planner.plan(intent)
         trace.append(TraceStep(step="task_plan_created", detail=str([t.value for t in plan.tasks])))
@@ -161,9 +251,9 @@ class Orchestrator:
                     detail=buy_wait_result.recommendation.value,
                 ))
 
-        # H6+ (Memory persistente real, Response Composer) todavía no está
-        # implementado; esos TaskType siguen en el plan pero no se ejecutan.
-        pending = [
+        # H8+ (Mejora Continua, Alertas) todavía no está implementado; esos
+        # TaskType siguen en el plan pero no se ejecutan.
+        tareas_pendientes = [
             t for t in policy_decision.allowed_tasks
             if t not in {
                 TaskType.SEARCH, TaskType.NORMALIZE, TaskType.ASK_CLARIFICATION,
@@ -171,10 +261,10 @@ class Orchestrator:
                 TaskType.RANK_OFFERS, TaskType.EVALUATE_BUY_WAIT,
             }
         ]
-        if pending:
+        if tareas_pendientes:
             trace.append(TraceStep(
                 step="pending_not_implemented",
-                detail=str([t.value for t in pending]),
+                detail=str([t.value for t in tareas_pendientes]),
             ))
 
         return OrchestrationResult(
@@ -202,3 +292,63 @@ class Orchestrator:
             presupuesto_max=presupuesto,
             urgencia=entities.get("urgencia"),
         )
+
+    def _resultado_directo(self, intent: ExtractedIntent, trace: list[TraceStep], mensaje: str) -> OrchestrationResult:
+        """H6: construye una respuesta corta para flujos de memoria, sin
+        pasar por Search/Ranking (no aplica en esos casos)."""
+        return OrchestrationResult(
+            intent=intent,
+            task_plan=TaskPlan(tasks=[]),
+            policy_decision=PolicyDecision(allowed_tasks=[]),
+            trace=trace,
+            intent_router_name=type(self.intent_router).__name__,
+            direct_message=mensaje,
+        )
+
+    def _resolver_pendiente(
+        self, request: OrchestratorRequest, pending: dict, trace: list[TraceStep]
+    ) -> OrchestrationResult:
+        """H6: interpreta sí/no para una confirmación pendiente (borrado o
+        consentimiento bancario). Determinista a propósito - ver comentario
+        en run()."""
+        palabra = _primera_palabra(request.message)
+        confirmado = palabra in _AFIRMATIVO
+        negado = palabra in _NEGATIVO
+        intent_vacio = ExtractedIntent(intent_type=IntentType.DESCONOCIDA, entities={})
+
+        if pending.get("type") == "confirmar_borrado":
+            if confirmado:
+                self.memory_store.set_pending_action(request.session_id, None)
+                self.memory_store.delete_all_payment_data(request.user_id)
+                # Limpiar también banco/tarjeta si habían quedado en la
+                # memoria de sesión de esta conversación.
+                session_entities = self.memory_store.get_session_entities(request.session_id)
+                session_entities.pop("banco", None)
+                session_entities.pop("tarjeta", None)
+                self.memory_store.save_session_entities(request.session_id, session_entities)
+                msg = "Listo, borré todos tus datos bancarios guardados."
+            elif negado:
+                self.memory_store.set_pending_action(request.session_id, None)
+                msg = "No borré nada, seguimos como estábamos."
+            else:
+                # Ni sí ni no: no asumimos nada tan sensible, volvemos a preguntar.
+                msg = "No entendí. ¿Confirmás el borrado de tus datos bancarios? (sí/no)"
+            return self._resultado_directo(intent_vacio, trace, msg)
+
+        if pending.get("type") == "consentir_banco":
+            if confirmado:
+                self.memory_store.set_pending_action(request.session_id, None)
+                self.memory_store.save_payment_context(
+                    request.user_id, pending.get("banco"), pending.get("tarjeta")
+                )
+                msg = "Listo, lo guardé para futuras búsquedas."
+            elif negado:
+                self.memory_store.set_pending_action(request.session_id, None)
+                msg = "Sin problema, no lo guardo - lo uso solo para esta conversación."
+            else:
+                msg = "No entendí. ¿Guardo ese banco/tarjeta para la próxima? (sí/no)"
+            return self._resultado_directo(intent_vacio, trace, msg)
+
+        # Tipo de pendiente desconocido (no debería pasar) - limpiar y seguir.
+        self.memory_store.set_pending_action(request.session_id, None)
+        return self._resultado_directo(intent_vacio, trace, "Listo.")
