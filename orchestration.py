@@ -109,6 +109,7 @@ class OrchestrationResult(BaseModel):
     task_plan: TaskPlan
     policy_decision: PolicyDecision
     trace: list[TraceStep] = Field(default_factory=list)
+    intent_router_name: str = ""
     # Campos de depuración H3: hasta que exista Response Composer (H7),
     # exponemos esto crudo para poder validar el pipeline end-to-end.
     # NO es la forma final de respuesta al usuario.
