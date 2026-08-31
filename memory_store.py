@@ -45,6 +45,12 @@ class MemoryStore:
     def save_session_entities(self, session_id: str, entities: dict) -> None:
         raise NotImplementedError
 
+    def get_last_recommendation(self, session_id: str) -> list[dict] | None:
+        raise NotImplementedError
+
+    def save_last_recommendation(self, session_id: str, factores: list[dict]) -> None:
+        raise NotImplementedError
+
     def get_pending_action(self, session_id: str) -> dict | None:
         raise NotImplementedError
 
@@ -59,6 +65,7 @@ class InMemoryStore(MemoryStore):
         self._payment: dict[str, PaymentContext] = {}
         self._session: dict[str, dict] = {}
         self._pending: dict[str, dict] = {}
+        self._last_reco: dict[str, list[dict]] = {}
 
     def get_payment_context(self, user_id):
         return self._payment.get(user_id)
@@ -83,6 +90,12 @@ class InMemoryStore(MemoryStore):
             self._pending.pop(session_id, None)
         else:
             self._pending[session_id] = action
+
+    def get_last_recommendation(self, session_id):
+        return self._last_reco.get(session_id)
+
+    def save_last_recommendation(self, session_id, factores):
+        self._last_reco[session_id] = factores
 
 
 class PostgresMemoryStore(MemoryStore):
@@ -112,8 +125,15 @@ class PostgresMemoryStore(MemoryStore):
                     session_id TEXT PRIMARY KEY,
                     entities JSONB NOT NULL DEFAULT '{}',
                     pending_action JSONB,
+                    last_recommendation JSONB,
                     updated_at TIMESTAMPTZ NOT NULL
                 );
+            """)
+            # ALTER defensivo: por si la tabla ya existía de un deploy
+            # anterior a H7 sin esta columna - no rompe si ya está.
+            cur.execute("""
+                ALTER TABLE session_context
+                ADD COLUMN IF NOT EXISTS last_recommendation JSONB;
             """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS audit_events (
@@ -190,6 +210,23 @@ class PostgresMemoryStore(MemoryStore):
                 ON CONFLICT (session_id) DO UPDATE
                 SET pending_action = EXCLUDED.pending_action, updated_at = EXCLUDED.updated_at;
             """, (session_id, self._Json(action) if action else None, now))
+            conn.commit()
+
+    def get_last_recommendation(self, session_id: str) -> list[dict] | None:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute("SELECT last_recommendation FROM session_context WHERE session_id = %s", (session_id,))
+            row = cur.fetchone()
+            return row[0] if row and row[0] else None
+
+    def save_last_recommendation(self, session_id: str, factores: list[dict]) -> None:
+        now = datetime.now(timezone.utc)
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO session_context (session_id, entities, last_recommendation, updated_at)
+                VALUES (%s, '{}', %s, %s)
+                ON CONFLICT (session_id) DO UPDATE
+                SET last_recommendation = EXCLUDED.last_recommendation, updated_at = EXCLUDED.updated_at;
+            """, (session_id, self._Json(factores), now))
             conn.commit()
 
 
