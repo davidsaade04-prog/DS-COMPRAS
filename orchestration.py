@@ -110,6 +110,10 @@ class OrchestrationResult(BaseModel):
     policy_decision: PolicyDecision
     trace: list[TraceStep] = Field(default_factory=list)
     intent_router_name: str = ""
+    # H6: usado por flujos de memoria (consentimiento, borrado, consulta) que
+    # responden directo sin pasar por Search/Ranking - ResponseComposer lo
+    # prioriza si está presente.
+    direct_message: str | None = None
     # Campos de depuración H3: hasta que exista Response Composer (H7),
     # exponemos esto crudo para poder validar el pipeline end-to-end.
     # NO es la forma final de respuesta al usuario.
