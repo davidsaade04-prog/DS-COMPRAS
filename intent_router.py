@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 
-from orchestration import ExtractedIntent, IntentType
+from app.models.orchestration import ExtractedIntent, IntentType
 
 # Campos considerados críticos por tipo de intención (V1.3 §15.5:
 # "solo preguntar si falta un dato crítico que cambie la recomendación").
@@ -28,6 +28,21 @@ _CATEGORIAS_CONOCIDAS = [
     "celular", "aire acondicionado", "heladera", "lavarropas", "televisor",
     "notebook", "parlante", "cocina", "sillon", "cama", "mesa", "silla",
 ]
+
+# Sinónimos frecuentes en Argentina que deben resolver a una categoría
+# conocida del catálogo. Bug real detectado en pruebas: "teléfono" (muy
+# común) no estaba mapeado y el agente preguntaba "¿qué producto buscás?"
+# aunque el usuario ya lo había dicho con claridad.
+_SINONIMOS_CATEGORIA = {
+    "telefono": "celular",
+    "teléfono": "celular",
+    "smartphone": "celular",
+    "heladerita": "heladera",
+    "tv": "televisor",
+    "living": "sillon",
+    "pc": "notebook",
+    "laptop": "notebook",
+}
 
 
 def _contains_term(text: str, term: str) -> bool:
@@ -81,9 +96,10 @@ class RuleBasedIntentRouter(IntentRouter):
             return IntentType.EXPLICAR_RECOMENDACION
         if any(p in text for p in ["tengo nativa", "tengo visa", "uso mastercard", "mi banco es", "mi tarjeta es"]):
             return IntentType.GESTIONAR_MEMORIA_BANCARIA
-        # fallback: si menciona una categoría conocida (con límite de palabra),
-        # asumimos búsqueda.
-        if any(_contains_term(text, cat) for cat in _CATEGORIAS_CONOCIDAS):
+        # fallback: si menciona una categoría conocida o un sinónimo (con
+        # límite de palabra), asumimos búsqueda.
+        terminos_categoria = list(_CATEGORIAS_CONOCIDAS) + list(_SINONIMOS_CATEGORIA)
+        if any(_contains_term(text, term) for term in terminos_categoria):
             return IntentType.BUSCAR_PRODUCTO
         return IntentType.DESCONOCIDA
 
@@ -91,6 +107,10 @@ class RuleBasedIntentRouter(IntentRouter):
         entities: dict[str, str] = {}
 
         categoria = next((c for c in _CATEGORIAS_CONOCIDAS if _contains_term(text, c)), None)
+        if categoria is None:
+            sinonimo = next((s for s in _SINONIMOS_CATEGORIA if _contains_term(text, s)), None)
+            if sinonimo:
+                categoria = _SINONIMOS_CATEGORIA[sinonimo]
         if categoria:
             entities["categoria"] = categoria
 
