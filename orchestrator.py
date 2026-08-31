@@ -148,6 +148,22 @@ class Orchestrator:
                 msg = "No tengo ningún dato bancario guardado tuyo."
             return self._resultado_directo(intent, trace, msg)
 
+        # --- H7: explicación bajo demanda (V1.3 §15.4). Usa lo que se
+        # guardó en memory_store la última vez que se armó un ranking en
+        # ESTA sesión - no vuelve a calcular nada, solo repite el motivo.
+        if intent.intent_type == IntentType.EXPLICAR_RECOMENDACION:
+            ultima = self.memory_store.get_last_recommendation(request.session_id)
+            if not ultima:
+                msg = "Todavía no te recomendé nada en esta conversación."
+            else:
+                partes = []
+                for item in ultima:
+                    factores = ", ".join(item.get("key_factors") or []) or "sin motivos particulares registrados"
+                    etiqueta = f" ({item['label']})" if item.get("label") else ""
+                    partes.append(f"#{item['rank']} {item['modelo']}{etiqueta}: {factores}")
+                msg = "Por qué recomendé cada opción:\n" + "\n".join(partes)
+            return self._resultado_directo(intent, trace, msg)
+
         # --- H6: continuidad de conversación. Lo dicho en ESTE mensaje
         # siempre pisa lo guardado; lo guardado solo rellena lo que falta.
         # Esto arregla casos como "¿algo más económico?" sin repetir todo
@@ -238,6 +254,13 @@ class Orchestrator:
             valid_prices = [pr for _, pr in valid_pairs]
             ranked_offers = self.ranking_engine.rank(valid_offers, valid_prices)
             trace.append(TraceStep(step="offers_ranked", detail=f"count={len(ranked_offers)}"))
+
+            # H7: guardar el motivo de esta recomendación por si preguntan
+            # "¿por qué esa opción?" más adelante en la misma conversación.
+            self.memory_store.save_last_recommendation(request.session_id, [
+                {"rank": r.rank, "modelo": r.offer.product.modelo, "label": r.label, "key_factors": r.key_factors}
+                for r in ranked_offers
+            ])
 
             if ranked_offers and TaskType.EVALUATE_BUY_WAIT in policy_decision.allowed_tasks:
                 top = ranked_offers[0]
