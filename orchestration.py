@@ -114,6 +114,7 @@ class OrchestrationResult(BaseModel):
     # responden directo sin pasar por Search/Ranking - ResponseComposer lo
     # prioriza si está presente.
     direct_message: str | None = None
+    memory_store_name: str = ""
     # Campos de depuración H3: hasta que exista Response Composer (H7),
     # exponemos esto crudo para poder validar el pipeline end-to-end.
     # NO es la forma final de respuesta al usuario.
