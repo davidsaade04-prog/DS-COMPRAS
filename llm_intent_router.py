@@ -47,7 +47,21 @@ lista (ej: "split", "equipo de aire" -> "aire acondicionado"; "teléfono", \
 Si el mensaje no tiene que ver con ninguna categoría de la lista, omitir \
 "categoria" (NO inventar una). No inventes ningún campo que el usuario no \
 haya mencionado, ni resolver un intent_type distinto de "desconocida" si \
-el mensaje es ambiguo o no encaja en ninguna categoría clara."""
+el mensaje es ambiguo o no encaja en ninguna categoría clara.
+
+Reglas para distinguir "consultar_memoria" de "buscar_producto" (esto se
+confunde fácil y hay que ser preciso):
+- "consultar_memoria" es SOLO cuando el usuario pregunta qué información
+  tiene guardada el sistema sobre ÉL MISMO (ej: "qué tenés guardado",
+  "qué banco recordás", "mostrame mis datos"). No lleva categoría de
+  producto.
+- Si el mensaje pregunta sobre PRODUCTOS, PRECIOS o PROMOCIONES -aunque
+  mencione un banco o tarjeta guardados- es "buscar_producto", con el
+  banco/tarjeta como entidad si corresponde. Mencionar un banco no
+  convierte automáticamente el mensaje en una consulta de memoria.
+  Ejemplo: "¿los aires acondicionados tienen promoción con Galicia?" es
+  "buscar_producto" con categoria="aire acondicionado" y banco="Galicia" -
+  NO es "consultar_memoria", aunque nombre un banco."""
 
 
 class LLMIntentRouter(IntentRouter):
