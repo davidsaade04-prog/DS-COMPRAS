@@ -197,12 +197,12 @@ def get_memory_store() -> MemoryStore:
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
         print("[memory_store] DATABASE_URL no configurada; usando memoria en "
-              "proceso (no persiste si el servidor se reinicia).")
+              "proceso (no persiste si el servidor se reinicia).", flush=True)
         return InMemoryStore()
     try:
         return PostgresMemoryStore(database_url)
     except Exception as exc:
         print(f"[memory_store] No se pudo conectar a Postgres; usando memoria "
-              f"en proceso. Motivo: {exc!r}")
+              f"en proceso. Motivo: {exc!r}", flush=True)
         return InMemoryStore()
-
+      
