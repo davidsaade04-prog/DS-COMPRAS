@@ -18,7 +18,7 @@ from orchestration import (
     TraceStep,
     TaskType,
 )
-from intent_router import IntentRouter, RuleBasedIntentRouter
+from intent_router import IntentRouter, RuleBasedIntentRouter, CRITICAL_FIELDS_BY_INTENT
 from task_planner import TaskPlanner
 from policy_engine import PolicyEngine
 from search_service import SearchService
@@ -164,15 +164,22 @@ class Orchestrator:
                 msg = "Por qué recomendé cada opción:\n" + "\n".join(partes)
             return self._resultado_directo(intent, trace, msg)
 
-        # --- H6: continuidad de conversación. Lo dicho en ESTE mensaje
+        # --- H6/H7: continuidad de conversación. Lo dicho en ESTE mensaje
         # siempre pisa lo guardado; lo guardado solo rellena lo que falta.
-        # Esto arregla casos como "¿algo más económico?" sin repetir todo
-        # de nuevo, y separa dos cosas distintas a propósito:
-        #   - memoria de SESIÓN (categoría, urgencia): no requiere
-        #     consentimiento especial, es conversación normal (V2.1 §7.1).
-        #   - memoria FINANCIERA persistida (banco/tarjeta): solo se usa acá
-        #     si ya fue consentida explícitamente en algún momento.
+        # Bug real detectado en pruebas: guardar banco/tarjeta en la memoria
+        # de SESIÓN (igual que categoría) hacía que una simple pregunta
+        # hipotética ("¿tienen promo con Galicia?") "pisara" para siempre
+        # el banco realmente guardado (Banco Nación) en toda la conversación
+        # siguiente, sin que el usuario lo haya pedido. Separación correcta:
+        #   - memoria de SESIÓN (categoría, urgencia, presupuesto): continúa
+        #     de mensaje a mensaje, no requiere consentimiento (V2.1 §7.1).
+        #   - banco/tarjeta: SOLO se usan de la sesión si vienen en ESTE
+        #     mismo mensaje (uso puntual); para continuidad entre mensajes
+        #     se usa exclusivamente lo persistido con consentimiento
+        #     explícito - nunca lo que quedó de un mensaje anterior.
         session_entities = self.memory_store.get_session_entities(request.session_id)
+        session_entities.pop("banco", None)
+        session_entities.pop("tarjeta", None)
         merged_entities = {**session_entities, **intent.entities}
 
         guardado = self.memory_store.get_payment_context(request.user_id)
@@ -183,17 +190,27 @@ class Orchestrator:
                 merged_entities["tarjeta"] = guardado.tarjeta
 
         intent.entities = merged_entities
-        self.memory_store.save_session_entities(request.session_id, merged_entities)
+        # Se persiste para la sesión SIN banco/tarjeta (ver comentario de
+        # arriba) - esos dos campos nunca deben "pegarse" de un mensaje al
+        # siguiente, solo vienen de esta consulta puntual o de lo persistido.
+        entidades_a_guardar = {k: v for k, v in merged_entities.items() if k not in ("banco", "tarjeta")}
+        self.memory_store.save_session_entities(request.session_id, entidades_a_guardar)
 
-        # Bug real detectado en pruebas H6: una intención "desconocida" como
-        # "¿algo más económico?" traía la categoría bien heredada de la
-        # sesión (merged_entities), pero el Task Planner decide el flujo
-        # mirando intent_type, no las entidades - seguía preguntando "¿qué
-        # producto buscás?" a pesar de ya saberlo. Si heredamos una
-        # categoría utilizable, la intención se "asciende" a búsqueda.
+        # Bug real detectado en pruebas H6/H7: "¿algo más económico?" o "no
+        # tengo apuro, compro igual?" traían la categoría bien heredada de
+        # la sesión, pero el Task Planner seguía preguntando "¿qué producto
+        # buscás?" - por dos motivos distintos que hay que cubrir juntos:
+        # (a) el intent podía haber quedado "desconocida" sin categoría
+        #     propia todavía, y (b) aunque ya fuera "buscar_producto",
+        #     missing_critical_fields se calculó ANTES del merge de sesión,
+        #     con la categoría todavía ausente. Se corrige de una sola vez,
+        #     recalculando sobre las entidades ya fusionadas.
         if intent.intent_type == IntentType.DESCONOCIDA and merged_entities.get("categoria"):
             intent.intent_type = IntentType.BUSCAR_PRODUCTO
-            intent.missing_critical_fields = []
+        intent.missing_critical_fields = [
+            f for f in CRITICAL_FIELDS_BY_INTENT.get(intent.intent_type, [])
+            if f not in merged_entities
+        ]
 
         plan = self.task_planner.plan(intent)
         trace.append(TraceStep(step="task_plan_created", detail=str([t.value for t in plan.tasks])))
