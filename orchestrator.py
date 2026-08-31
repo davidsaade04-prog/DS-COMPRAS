@@ -34,6 +34,16 @@ from domain import PaymentContext, PriceResult
 from decimal import Decimal, InvalidOperation
 
 
+def _default_intent_router() -> IntentRouter:
+    """Usa el LLM si hay ANTHROPIC_API_KEY configurada; si no (o si falla
+    la inicialización), cae al router por reglas para no romper el sistema."""
+    try:
+        from llm_intent_router import LLMIntentRouter
+        return LLMIntentRouter()
+    except Exception:
+        return RuleBasedIntentRouter()
+
+
 class Orchestrator:
     def __init__(
         self,
@@ -51,7 +61,7 @@ class Orchestrator:
         # Inyección de dependencias: permite testear cada pieza aislada y
         # reemplazar cualquier mock por una implementación real sin tocar
         # esta clase.
-        self.intent_router = intent_router or RuleBasedIntentRouter()
+        self.intent_router = intent_router or _default_intent_router()
         self.task_planner = task_planner or TaskPlanner()
         self.policy_engine = policy_engine or PolicyEngine()
         self.search_service = search_service or SearchService(
