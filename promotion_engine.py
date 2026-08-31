@@ -8,6 +8,7 @@ Fuente: V2.1 §10, §10.1 (correcciones) + adenda 10.4 (reglas Argentina).
 
 from __future__ import annotations
 from datetime import datetime, timezone
+import unicodedata
 from decimal import Decimal
 
 from domain import (
@@ -24,6 +25,20 @@ except Exception:  # pragma: no cover - fallback si falta tzdata en el sistema
 def now_ar() -> datetime:
     """Adenda 10.4.6: evaluar vigencias contra hora local AR, no UTC crudo."""
     return datetime.now(_AR_TZ)
+
+
+def _normalize(text: str) -> str:
+    """
+    Compara texto en español ignorando may/min y tildes.
+    Bug real detectado en pruebas: la regla mock decía 'Banco Nacion' (sin
+    tilde) y el usuario escribió 'Banco Nación' (con tilde, como corresponde),
+    y la comparación fallaba SIEMPRE por eso - ninguna promoción bancaria
+    argentina se confirmaba nunca con esos datos, algo que iba a pasar con
+    cualquier usuario real que escriba bien el español.
+    """
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    return text.lower().strip()
 
 
 class PromotionEngine:
@@ -61,13 +76,13 @@ class PromotionEngine:
         if rule.emisor_banco:
             if not ctx.banco:
                 no_verificables.append("no se conoce el banco del usuario")
-            elif rule.emisor_banco.lower() != ctx.banco.lower():
+            elif _normalize(rule.emisor_banco) != _normalize(ctx.banco):
                 incumplidas.append("banco no coincide")
 
         if rule.medio_pago:
             if not ctx.tarjeta:
                 no_verificables.append("no se conoce la tarjeta del usuario")
-            elif rule.medio_pago.lower() != ctx.tarjeta.lower():
+            elif _normalize(rule.medio_pago) != _normalize(ctx.tarjeta):
                 incumplidas.append("medio de pago no coincide")
 
         # --- Comercio (adenda 10.4.4: campaña ≠ producto/comercio) ---
@@ -75,13 +90,13 @@ class PromotionEngine:
         # cualquiera: queda como no verificable, nunca como confirmada.
         if rule.comercio is None:
             no_verificables.append("la regla no especifica comercio aplicable")
-        elif rule.comercio.lower() != offer.seller.lower():
+        elif _normalize(rule.comercio) != _normalize(offer.seller):
             incumplidas.append("comercio no participante")
 
         # --- Categoría / producto (misma lógica que comercio) ---
         if rule.categoria_o_producto is None:
             no_verificables.append("la regla no especifica categoría/producto aplicable")
-        elif rule.categoria_o_producto.lower() not in offer.product.categoria.lower():
+        elif _normalize(rule.categoria_o_producto) not in _normalize(offer.product.categoria):
             incumplidas.append("categoría/producto no coincide")
 
         # --- Monto mínimo ---
@@ -129,3 +144,4 @@ class PromotionEngine:
         if rule.tope_reintegro is not None:
             return min(bruto, rule.tope_reintegro)
         return bruto
+        
