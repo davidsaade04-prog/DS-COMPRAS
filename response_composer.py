@@ -91,6 +91,16 @@ class ResponseComposer:
         debug_entities = dict(result.intent.entities)
         debug_router = result.intent_router_name
 
+        # H6: flujos de memoria (consentimiento, borrado, consulta) devuelven
+        # su propio mensaje ya armado - no pasan por tarjetas de ofertas.
+        if result.direct_message is not None:
+            return ComposedResponse(
+                message=result.direct_message,
+                debug_intent=debug_intent,
+                debug_entities=debug_entities,
+                debug_router=debug_router,
+            )
+
         if result.task_plan.requires_clarification:
             return ComposedResponse(
                 message=result.task_plan.clarification_question or "¿Podés darme más detalles?",
