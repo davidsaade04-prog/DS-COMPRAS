@@ -150,9 +150,15 @@ class ResponseComposer:
         prefix = {
             "comprar": "💡 Comprar ahora",
             "esperar": "💡 Conviene esperar",
-            "neutro_sin_evidencia_suficiente": "💡 No hay evidencia suficiente para recomendar",
+            "neutro_sin_evidencia_suficiente": "💡 Sin evidencia suficiente",
         }[bw.recommendation.value]
-        text = f"{prefix}: {bw.reason}."
+        # Bug real detectado en pruebas: si bw.reason ya terminaba en punto,
+        # quedaba "...confianza.." (doble punto) y además el prefijo NEUTRO
+        # repetía casi la misma frase que el motivo ("no hay evidencia para
+        # recomendar: no hay evidencia para recomendar con confianza").
+        reason = bw.reason.rstrip(".")
+        text = f"{prefix}: {reason}."
         if bw.review_condition:
             text += f" {bw.review_condition}"
         return text
+        
