@@ -41,6 +41,14 @@ def _normalize(text: str) -> str:
     return text.lower().strip()
 
 
+def _coincide_parcial(a: str, b: str) -> bool:
+    """True si, normalizados, uno contiene al otro. Permite que "Nativa"
+    (regla) matchee con "Nativa Mastercard" (como lo dice el usuario real) en
+    cualquiera de los dos sentidos, sin exigir coincidencia exacta."""
+    na, nb = _normalize(a), _normalize(b)
+    return na in nb or nb in na
+
+
 class PromotionEngine:
     def evaluate(
         self,
@@ -73,16 +81,21 @@ class PromotionEngine:
             incumplidas.append("todavía no empezó la vigencia")
 
         # --- Banco / medio de pago ---
+        # Comparación por "contiene", no exacta: el usuario puede decir
+        # "Nativa Mastercard" (nombre completo, correcto) y la regla decir
+        # solo "Nativa" (abreviado) - bug real detectado en pruebas: con
+        # comparación exacta, "nativa" != "nativa mastercard" y la promoción
+        # nunca confirmaba con el nombre completo de la tarjeta.
         if rule.emisor_banco:
             if not ctx.banco:
                 no_verificables.append("no se conoce el banco del usuario")
-            elif _normalize(rule.emisor_banco) != _normalize(ctx.banco):
+            elif not _coincide_parcial(rule.emisor_banco, ctx.banco):
                 incumplidas.append("banco no coincide")
 
         if rule.medio_pago:
             if not ctx.tarjeta:
                 no_verificables.append("no se conoce la tarjeta del usuario")
-            elif _normalize(rule.medio_pago) != _normalize(ctx.tarjeta):
+            elif not _coincide_parcial(rule.medio_pago, ctx.tarjeta):
                 incumplidas.append("medio de pago no coincide")
 
         # --- Comercio (adenda 10.4.4: campaña ≠ producto/comercio) ---
@@ -144,4 +157,3 @@ class PromotionEngine:
         if rule.tope_reintegro is not None:
             return min(bruto, rule.tope_reintegro)
         return bruto
-        
