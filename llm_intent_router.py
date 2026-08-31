@@ -92,7 +92,7 @@ class LLMIntentRouter(IntentRouter):
             # parseo, de la API o de otra cosa. Ahora queda impreso en
             # Render > Logs (buscar "llm_intent_router").
             print(f"[llm_intent_router] Fallo al procesar respuesta del LLM. "
-                  f"Motivo: {exc!r}. Texto crudo recibido: {raw_text!r}")
+                  f"Motivo: {exc!r}. Texto crudo recibido: {raw_text!r}", flush=True)
             # V2.1 §19: un fallo de herramienta nunca debe convertirse en un
             # dato inventado. Degradamos a "desconocida" en vez de adivinar.
             intent_type = IntentType.DESCONOCIDA
