@@ -40,7 +40,11 @@ def _default_intent_router() -> IntentRouter:
     try:
         from llm_intent_router import LLMIntentRouter
         return LLMIntentRouter()
-    except Exception:
+    except Exception as exc:
+        # Bug de diagnóstico H2: antes esto fallaba en silencio y no había
+        # forma de saber por qué el LLM no se activaba. Lo dejamos impreso
+        # (aparece en Render > Logs) para poder diagnosticarlo.
+        print(f"[intent_router] LLMIntentRouter no disponible, usando reglas. Motivo: {exc!r}")
         return RuleBasedIntentRouter()
 
 
@@ -77,7 +81,10 @@ class Orchestrator:
         self.promotion_catalog = promotion_catalog or MockPromotionCatalog()
 
     def run(self, request: OrchestratorRequest) -> OrchestrationResult:
-        trace: list[TraceStep] = [TraceStep(step="message_received")]
+        trace: list[TraceStep] = [TraceStep(
+            step="message_received",
+            detail=f"router={type(self.intent_router).__name__}",
+        )]
 
         intent = self.intent_router.extract(request.message)
         trace.append(TraceStep(step="intent_classified", detail=intent.intent_type.value))
@@ -179,6 +186,7 @@ class Orchestrator:
             price_results=[pr for pr in price_results if pr is not None],
             ranked_offers=ranked_offers,
             buy_wait_result=buy_wait_result,
+            intent_router_name=type(self.intent_router).__name__,
         )
 
     @staticmethod
