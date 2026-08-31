@@ -63,6 +63,7 @@ class LLMIntentRouter(IntentRouter):
         self._model = model
 
     def extract(self, message: str) -> ExtractedIntent:
+        raw_text = None
         try:
             response = self._client.messages.create(
                 model=self._model,
@@ -71,16 +72,29 @@ class LLMIntentRouter(IntentRouter):
                 messages=[{"role": "user", "content": message}],
             )
             raw_text = response.content[0].text.strip()
+            # Defensivo: a veces el modelo envuelve el JSON en un bloque de
+            # código markdown (```json ... ```) a pesar de que el prompt
+            # pide "sin markdown". Lo despojamos antes de parsear.
+            if raw_text.startswith("```"):
+                raw_text = raw_text.strip("`")
+                if raw_text.lower().startswith("json"):
+                    raw_text = raw_text[4:]
+                raw_text = raw_text.strip()
+
             data = json.loads(raw_text)
             intent_type = IntentType(data.get("intent_type", "desconocida"))
             entities = {
                 k: str(v) for k, v in (data.get("entities") or {}).items() if v
             }
-        except Exception:
+        except Exception as exc:
+            # Bug de diagnóstico H2 (segunda vuelta): esto fallaba en
+            # silencio y no había forma de saber si el problema era de
+            # parseo, de la API o de otra cosa. Ahora queda impreso en
+            # Render > Logs (buscar "llm_intent_router").
+            print(f"[llm_intent_router] Fallo al procesar respuesta del LLM. "
+                  f"Motivo: {exc!r}. Texto crudo recibido: {raw_text!r}")
             # V2.1 §19: un fallo de herramienta nunca debe convertirse en un
-            # dato inventado. Si el LLM falla, no responde JSON válido, o
-            # devuelve un intent_type que no existe, degradamos a
-            # "desconocida" en vez de adivinar.
+            # dato inventado. Degradamos a "desconocida" en vez de adivinar.
             intent_type = IntentType.DESCONOCIDA
             entities = {}
 
