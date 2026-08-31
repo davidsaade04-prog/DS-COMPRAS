@@ -58,7 +58,7 @@ def _default_intent_router() -> IntentRouter:
         # Bug de diagnóstico H2: antes esto fallaba en silencio y no había
         # forma de saber por qué el LLM no se activaba. Lo dejamos impreso
         # (aparece en Render > Logs) para poder diagnosticarlo.
-        print(f"[intent_router] LLMIntentRouter no disponible, usando reglas. Motivo: {exc!r}")
+        print(f"[intent_router] LLMIntentRouter no disponible, usando reglas. Motivo: {exc!r}", flush=True)
         return RuleBasedIntentRouter()
 
 
@@ -277,6 +277,7 @@ class Orchestrator:
             ranked_offers=ranked_offers,
             buy_wait_result=buy_wait_result,
             intent_router_name=type(self.intent_router).__name__,
+            memory_store_name=type(self.memory_store).__name__,
         )
 
     @staticmethod
@@ -302,6 +303,7 @@ class Orchestrator:
             policy_decision=PolicyDecision(allowed_tasks=[]),
             trace=trace,
             intent_router_name=type(self.intent_router).__name__,
+            memory_store_name=type(self.memory_store).__name__,
             direct_message=mensaje,
         )
 
