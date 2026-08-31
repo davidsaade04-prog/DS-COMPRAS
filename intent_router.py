@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 
-from app.models.orchestration import ExtractedIntent, IntentType
+from orchestration import ExtractedIntent, IntentType
 
 # Campos considerados críticos por tipo de intención (V1.3 §15.5:
 # "solo preguntar si falta un dato crítico que cambie la recomendación").
@@ -37,11 +37,19 @@ _SINONIMOS_CATEGORIA = {
     "telefono": "celular",
     "teléfono": "celular",
     "smartphone": "celular",
+    "celu": "celular",
     "heladerita": "heladera",
+    "frigorifico": "heladera",
+    "frigorífico": "heladera",
+    "freezer": "heladera",
     "tv": "televisor",
     "living": "sillon",
     "pc": "notebook",
     "laptop": "notebook",
+    "compu": "notebook",
+    "computadora": "notebook",
+    "split": "aire acondicionado",
+    "a/a": "aire acondicionado",
 }
 
 
