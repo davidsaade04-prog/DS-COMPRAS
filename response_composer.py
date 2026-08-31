@@ -42,6 +42,7 @@ class ComposedResponse(BaseModel):
     # detectada). Sacar cuando H7 esté maduro - no es para el usuario final.
     debug_intent: str | None = None
     debug_entities: dict[str, str] = {}
+    debug_router: str | None = None
 
 
 def _fmt_ars(value: Decimal | None) -> str:
@@ -88,6 +89,7 @@ class ResponseComposer:
     def compose(self, result: OrchestrationResult) -> ComposedResponse:
         debug_intent = result.intent.intent_type.value
         debug_entities = dict(result.intent.entities)
+        debug_router = result.intent_router_name
 
         if result.task_plan.requires_clarification:
             return ComposedResponse(
@@ -95,6 +97,7 @@ class ResponseComposer:
                 clarification_question=result.task_plan.clarification_question,
                 debug_intent=debug_intent,
                 debug_entities=debug_entities,
+                debug_router=debug_router,
             )
 
         if result.task_plan.requires_user_confirmation:
@@ -103,6 +106,7 @@ class ResponseComposer:
                 requires_confirmation=True,
                 debug_intent=debug_intent,
                 debug_entities=debug_entities,
+                debug_router=debug_router,
             )
 
         if not result.ranked_offers:
@@ -114,6 +118,7 @@ class ResponseComposer:
                         "¿Querés que pruebe con otra categoría o ampliemos el presupuesto?",
                 debug_intent=debug_intent,
                 debug_entities=debug_entities,
+                debug_router=debug_router,
             )
 
         cards = [self._build_card(r) for r in result.ranked_offers]
@@ -124,6 +129,7 @@ class ResponseComposer:
         return ComposedResponse(
             message=intro, cards=cards, buy_wait_text=buy_wait_text,
             debug_intent=debug_intent, debug_entities=debug_entities,
+            debug_router=debug_router,
         )
 
     def _build_card(self, r: RankedOffer) -> OfferCard:
@@ -161,4 +167,3 @@ class ResponseComposer:
         if bw.review_condition:
             text += f" {bw.review_condition}"
         return text
-        
