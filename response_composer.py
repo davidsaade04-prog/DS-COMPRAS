@@ -43,6 +43,7 @@ class ComposedResponse(BaseModel):
     debug_intent: str | None = None
     debug_entities: dict[str, str] = {}
     debug_router: str | None = None
+    debug_memory: str | None = None
 
 
 def _fmt_ars(value: Decimal | None) -> str:
@@ -90,6 +91,7 @@ class ResponseComposer:
         debug_intent = result.intent.intent_type.value
         debug_entities = dict(result.intent.entities)
         debug_router = result.intent_router_name
+        debug_memory = result.memory_store_name
 
         # H6: flujos de memoria (consentimiento, borrado, consulta) devuelven
         # su propio mensaje ya armado - no pasan por tarjetas de ofertas.
@@ -99,6 +101,7 @@ class ResponseComposer:
                 debug_intent=debug_intent,
                 debug_entities=debug_entities,
                 debug_router=debug_router,
+                debug_memory=debug_memory,
             )
 
         if result.task_plan.requires_clarification:
@@ -108,6 +111,7 @@ class ResponseComposer:
                 debug_intent=debug_intent,
                 debug_entities=debug_entities,
                 debug_router=debug_router,
+                debug_memory=debug_memory,
             )
 
         if result.task_plan.requires_user_confirmation:
@@ -117,6 +121,7 @@ class ResponseComposer:
                 debug_intent=debug_intent,
                 debug_entities=debug_entities,
                 debug_router=debug_router,
+                debug_memory=debug_memory,
             )
 
         if not result.ranked_offers:
@@ -129,6 +134,7 @@ class ResponseComposer:
                 debug_intent=debug_intent,
                 debug_entities=debug_entities,
                 debug_router=debug_router,
+                debug_memory=debug_memory,
             )
 
         cards = [self._build_card(r) for r in result.ranked_offers]
@@ -139,7 +145,7 @@ class ResponseComposer:
         return ComposedResponse(
             message=intro, cards=cards, buy_wait_text=buy_wait_text,
             debug_intent=debug_intent, debug_entities=debug_entities,
-            debug_router=debug_router,
+            debug_router=debug_router, debug_memory=debug_memory,
         )
 
     def _build_card(self, r: RankedOffer) -> OfferCard:
