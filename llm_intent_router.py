@@ -35,11 +35,18 @@ markdown) con esta forma exacta:
   "entities": {{
     "categoria": uno de {_CATEGORIAS_VALIDAS} (solo si aplica; omitir si no aplica),
     "producto_especifico": el texto MÁS PRECISO posible de lo que el usuario \
-pidió, tal cual lo mencionó (marca, modelo, tamaño, características) - ej: \
-"Motorola Edge 70 Pro", "Samsung Galaxy S26", "smart tv 75 pulgadas". Omitir \
-SOLO si el usuario pidió algo genérico sin marca/modelo/tamaño (ej: "busco \
-un aire acondicionado" sin más detalle -> omitir este campo, alcanza con \
-"categoria"). Si mencionó cualquier detalle específico, SIEMPRE incluirlo acá,
+pidió, SOLO si es algo realmente buscable en una tienda: marca+modelo \
+("Motorola Edge 70 Pro", "Samsung Galaxy S26") o una característica \
+concreta y medible (tamaño en pulgadas, capacidad en GB) - ej: "smart tv 75 \
+pulgadas". NUNCA uses acá preferencias vagas o subjetivas como "buena \
+cámara", "buena batería", "barato", "rápido", "que sirva para trabajar" - \
+esas NO son términos de búsqueda válidos y buscarlas literalmente no trae \
+resultados. Si el usuario solo dio preferencias así, omitir este campo por \
+completo (alcanza con "categoria"). Si no hay marca/modelo/tamaño concreto, \
+omitir siempre,
+    "comercio_especifico": SOLO si el usuario pide explícitamente buscar en \
+un comercio puntual (ej: "buscame en Cetrogar", "solo en MercadoLibre") - \
+el nombre del comercio tal cual lo dijo. Omitir en cualquier otro caso,
 "presupuesto": string solo con dígitos (opcional),
     "urgencia": "alta" o "baja" (opcional),
     "banco": nombre del banco tal cual lo dijo el usuario (opcional),
@@ -73,7 +80,13 @@ No extraigas "tarjeta de crédito" ni "tarjeta de débito" como si fueran el
 nombre de una tarjeta - son términos genéricos, no un medio de pago
 identificable (ej: "Nativa", "Visa", "Mastercard"). Si el usuario solo dice
 "tengo tarjeta de crédito de Banco Nación" sin nombrar la tarjeta en sí,
-extraé el banco pero omití "tarjeta"."""
+extraé el banco pero omití "tarjeta".
+
+Si el mensaje es una QUEJA o comentario sobre el propio sistema (ej: "los
+links no funcionan", "todos tus resultados son del mismo comercio", "esto
+está mal") y NO describe un producto nuevo que buscar, usá intent_type
+"desconocida" - no repitas la última búsqueda como si el usuario hubiera
+pedido algo nuevo."""
 
 
 class LLMIntentRouter(IntentRouter):

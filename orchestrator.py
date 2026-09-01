@@ -51,6 +51,28 @@ def _primera_palabra(text: str) -> str:
     return limpio.strip(".,!?¡¿")
 
 
+# Alias por fuente, para poder reconocer "buscame en MercadoLibre" contra el
+# nombre técnico interno de la fuente (mercadolibre, fravega, etc.).
+_ALIAS_FUENTE = {
+    "mercadolibre": ["mercadolibre", "mercado libre", "meli"],
+    "fravega": ["fravega", "frávega"],
+    "tienda_bna": ["tienda bna", "banco nacion", "banco nación", "bna"],
+    "google_shopping": ["google shopping", "google"],
+}
+
+
+def _filtrar_por_comercio(offers: list, comercio_pedido: str) -> list:
+    pedido = comercio_pedido.strip().lower()
+    resultado = []
+    for offer in offers:
+        seller_ok = pedido in offer.seller.lower()
+        fuente = offer.provenance.source_name
+        alias_ok = any(pedido in alias or alias in pedido for alias in _ALIAS_FUENTE.get(fuente, [fuente]))
+        if seller_ok or alias_ok:
+            resultado.append(offer)
+    return resultado
+
+
 def _default_intent_router() -> IntentRouter:
     """Usa el LLM si hay ANTHROPIC_API_KEY configurada; si no (o si falla
     la inicialización), cae al router por reglas para no romper el sistema."""
@@ -196,6 +218,20 @@ class Orchestrator:
         session_entities = self.memory_store.get_session_entities(request.session_id)
         session_entities.pop("banco", None)
         session_entities.pop("tarjeta", None)
+
+        # Bug GRAVE detectado en pruebas: "producto_especifico" (ej. "3000
+        # frigorías", "Motorola Edge 70 Pro") quedaba pegado de sesión en
+        # sesión aunque el usuario cambiara de CATEGORÍA por completo -
+        # "búscame un celular" después de hablar de aires acondicionados
+        # terminaba buscando literalmente "3000 frigorías" en los sitios
+        # reales, devolviendo aires acondicionados disfrazados de celulares.
+        # Si la categoría de este mensaje es distinta a la de la sesión,
+        # el término específico viejo ya no aplica - se descarta.
+        categoria_nueva = intent.entities.get("categoria")
+        categoria_previa = session_entities.get("categoria")
+        if categoria_nueva and categoria_previa and categoria_nueva != categoria_previa:
+            session_entities.pop("producto_especifico", None)
+
         merged_entities = {**session_entities, **intent.entities}
 
         guardado = self.memory_store.get_payment_context(request.user_id)
@@ -209,7 +245,7 @@ class Orchestrator:
         # Se persiste para la sesión SIN banco/tarjeta (ver comentario de
         # arriba) - esos dos campos nunca deben "pegarse" de un mensaje al
         # siguiente, solo vienen de esta consulta puntual o de lo persistido.
-        entidades_a_guardar = {k: v for k, v in merged_entities.items() if k not in ("banco", "tarjeta")}
+        entidades_a_guardar = {k: v for k, v in merged_entities.items() if k not in ("banco", "tarjeta", "comercio_especifico")}
         self.memory_store.save_session_entities(request.session_id, entidades_a_guardar)
 
         # Bug real detectado en pruebas H6/H7: "¿algo más económico?" o "no
@@ -250,6 +286,20 @@ class Orchestrator:
             if TaskType.NORMALIZE in policy_decision.allowed_tasks:
                 offers = self.offer_normalizer.normalize(search_result)
                 trace.append(TraceStep(step="offers_normalized", detail=f"count={len(offers)}"))
+
+                # Función faltante detectada en pruebas: "buscame en
+                # Cetrogar" o "solo en MercadoLibre" se ignoraban por
+                # completo, devolviendo la búsqueda sin filtrar. Ahora si
+                # el usuario pidió un comercio puntual, se filtra de
+                # verdad - y si no queda nada, se avisa en vez de mostrar
+                # resultados de otro comercio sin decir nada.
+                comercio_pedido = intent.entities.get("comercio_especifico")
+                if comercio_pedido:
+                    offers = _filtrar_por_comercio(offers, comercio_pedido)
+                    trace.append(TraceStep(
+                        step="filtrado_por_comercio",
+                        detail=f"comercio={comercio_pedido!r} quedaron={len(offers)}",
+                    ))
 
         price_results: list[PriceResult] = []
         rules_by_id_per_offer: dict[str, dict] = {}
