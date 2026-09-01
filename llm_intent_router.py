@@ -34,7 +34,13 @@ markdown) con esta forma exacta:
   "intent_type": uno de ["buscar_producto","explicar_recomendacion","gestionar_memoria_bancaria","consultar_memoria","borrar_memoria","crear_alerta","desconocida"],
   "entities": {{
     "categoria": uno de {_CATEGORIAS_VALIDAS} (solo si aplica; omitir si no aplica),
-    "presupuesto": string solo con dígitos (opcional),
+    "producto_especifico": el texto MÁS PRECISO posible de lo que el usuario \
+pidió, tal cual lo mencionó (marca, modelo, tamaño, características) - ej: \
+"Motorola Edge 70 Pro", "Samsung Galaxy S26", "smart tv 75 pulgadas". Omitir \
+SOLO si el usuario pidió algo genérico sin marca/modelo/tamaño (ej: "busco \
+un aire acondicionado" sin más detalle -> omitir este campo, alcanza con \
+"categoria"). Si mencionó cualquier detalle específico, SIEMPRE incluirlo acá,
+"presupuesto": string solo con dígitos (opcional),
     "urgencia": "alta" o "baja" (opcional),
     "banco": nombre del banco tal cual lo dijo el usuario (opcional),
     "tarjeta": nombre de la tarjeta/medio de pago tal cual lo dijo el usuario (opcional)
@@ -61,7 +67,13 @@ confunde fácil y hay que ser preciso):
   convierte automáticamente el mensaje en una consulta de memoria.
   Ejemplo: "¿los aires acondicionados tienen promoción con Galicia?" es
   "buscar_producto" con categoria="aire acondicionado" y banco="Galicia" -
-  NO es "consultar_memoria", aunque nombre un banco."""
+  NO es "consultar_memoria", aunque nombre un banco.
+
+No extraigas "tarjeta de crédito" ni "tarjeta de débito" como si fueran el
+nombre de una tarjeta - son términos genéricos, no un medio de pago
+identificable (ej: "Nativa", "Visa", "Mastercard"). Si el usuario solo dice
+"tengo tarjeta de crédito de Banco Nación" sin nombrar la tarjeta en sí,
+extraé el banco pero omití "tarjeta"."""
 
 
 class LLMIntentRouter(IntentRouter):

@@ -141,6 +141,7 @@ class Offer(BaseModel):
     warranty: Optional[str] = None
     rating: Optional[Decimal] = None
     rating_count: Optional[int] = None
+    image_url: Optional[str] = None
     provenance: Provenance
 
 

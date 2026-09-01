@@ -340,8 +340,16 @@ class Orchestrator:
                 presupuesto = Decimal(entities["presupuesto"])
             except InvalidOperation:
                 presupuesto = None
+        categoria = entities.get("categoria", "")
+        # Bug real detectado en pruebas: buscar solo por categoria genérica
+        # ("celular", "televisor") ignoraba pedidos específicos como
+        # "Motorola Edge 70 Pro" o "smart tv de 75 pulgadas" y devolvía
+        # siempre lo mismo. Si el usuario dio un detalle más preciso, ESE
+        # es el texto que se manda a las fuentes reales.
+        query = entities.get("producto_especifico") or categoria
         return SearchCriteria(
-            categoria=entities.get("categoria", ""),
+            categoria=categoria,
+            query=query,
             presupuesto_max=presupuesto,
             urgencia=entities.get("urgencia"),
         )

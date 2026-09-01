@@ -28,7 +28,15 @@ DEFAULT_WEIGHTS = {
 # Umbral de empate: si la diferencia relativa de score es menor a esto,
 # se consideran equivalentes (V1.3 §10.2). Valor conservador para H5;
 # calibrar con datos reales en H10 (Plan de Desarrollo §17.4).
-EMPATE_UMBRAL_RELATIVO = Decimal("0.03")  # 3%
+EMPATE_UMBRAL_RELATIVO = Decimal("0.03")  # 3% de diferencia en el score combinado
+# Bug real detectado en pruebas con datos reales de MercadoLibre/Frávega:
+# dos ofertas con precios que difieren un 5-10% se marcaban "empatadas"
+# porque el score combinado las acercaba (financiación/calificación/stock
+# suelen quedar iguales cuando la fuente real no informa esos datos, y el
+# precio pesa solo 30%). Ahora el empate exige AMBAS cosas: score parecido
+# Y precio parecido - así no se llama "empate" a algo con precios bien
+# distintos solo porque el resto de los factores coincide por default.
+EMPATE_UMBRAL_PRECIO = Decimal("0.03")  # 3% de diferencia en costo efectivo
 
 MAX_OPCIONES = 4
 MIN_OPCIONES_CALIDAD = 2
@@ -148,12 +156,20 @@ class RankingEngine:
     def _marcar_empates(ranked: list[RankedOffer]) -> None:
         """V1.3 §10.2: si dos opciones son equivalentes, no forzar un ganador
         - se anota en key_factors para que el Response Composer (H7) lo
-        muestre como empate en vez de inventar una diferencia."""
+        muestre como empate en vez de inventar una diferencia. Requiere
+        score Y precio parecidos (ver comentario junto a las constantes)."""
         for i in range(len(ranked) - 1):
             a, b = ranked[i], ranked[i + 1]
             if a.internal_score == 0:
                 continue
-            diff_relativa = abs(a.internal_score - b.internal_score) / a.internal_score
-            if diff_relativa < EMPATE_UMBRAL_RELATIVO:
+            diff_score = abs(a.internal_score - b.internal_score) / a.internal_score
+
+            precio_a = a.price_result.costo_efectivo
+            precio_b = b.price_result.costo_efectivo
+            if precio_a == 0:
+                continue
+            diff_precio = abs(precio_a - precio_b) / precio_a
+
+            if diff_score < EMPATE_UMBRAL_RELATIVO and diff_precio < EMPATE_UMBRAL_PRECIO:
                 a.key_factors.append(f"empatado con rank {b.rank}")
                 b.key_factors.append(f"empatado con rank {a.rank}")

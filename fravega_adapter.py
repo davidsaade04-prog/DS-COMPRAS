@@ -31,7 +31,7 @@ class FravegaAdapter(SearchAdapter):
         self._timeout = timeout
 
     def search(self, criteria: SearchCriteria) -> list[dict]:
-        url = f"{_BASE_URL}/{criteria.categoria}"
+        url = f"{_BASE_URL}/{criteria.query or criteria.categoria}"
         params = {"_from": 0, "_to": max(self._limit - 1, 0)}
         response = httpx.get(url, params=params, timeout=self._timeout)
         response.raise_for_status()

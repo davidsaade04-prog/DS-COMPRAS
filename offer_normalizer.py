@@ -196,6 +196,7 @@ def _normalize_mercadolibre(raw: dict, categoria: str, tier: SourceTier) -> Offe
         financing=financing,
         rating=None,  # la búsqueda pública no trae calificación - no se inventa
         rating_count=None,
+        image_url=raw.get("thumbnail"),
         provenance=Provenance(
             source_name="mercadolibre",
             source_tier=tier,
@@ -245,6 +246,8 @@ def _normalize_fravega(raw: dict, categoria: str, tier: SourceTier) -> Offer:
 
     modelo = raw.get("productName", "Producto sin nombre")
     seller_label = seller.get("sellerName") or "Frávega"
+    imagenes = item.get("images") or []
+    image_url = imagenes[0].get("imageUrl") if imagenes else None
 
     return Offer(
         offer_id=str(raw.get("productId", uuid4())),
@@ -263,6 +266,7 @@ def _normalize_fravega(raw: dict, categoria: str, tier: SourceTier) -> Offer:
         financing=financing,
         rating=None,
         rating_count=None,
+        image_url=image_url,
         provenance=Provenance(
             source_name="fravega",
             source_tier=tier,

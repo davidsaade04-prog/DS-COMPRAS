@@ -16,6 +16,13 @@ class SearchCriteria(BaseModel):
     categoria: str
     presupuesto_max: Decimal | None = None
     urgencia: str | None = None
+    # Bug real detectado en pruebas: si el usuario pide "Motorola Edge 70
+    # Pro" o "smart tv de 75 pulgadas", buscar solo por categoria ("celular",
+    # "televisor") devuelve resultados genéricos que ignoran el pedido
+    # específico. Este campo lleva el texto más preciso posible para
+    # mandarle a las fuentes reales; si no hay nada más específico, cae a
+    # la categoría (ver Orchestrator._build_search_criteria).
+    query: str = ""
 
 
 class SourceSearchOutcome(BaseModel):

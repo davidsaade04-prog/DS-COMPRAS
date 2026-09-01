@@ -35,7 +35,7 @@ class MercadoLibreAdapter(SearchAdapter):
         self._timeout = timeout
 
     def search(self, criteria: SearchCriteria) -> list[dict]:
-        params = {"q": criteria.categoria, "limit": self._limit}
+        params = {"q": criteria.query or criteria.categoria, "limit": self._limit}
         if criteria.presupuesto_max is not None:
             params["price_max"] = str(criteria.presupuesto_max)
         # Cualquier error acá (timeout, 4xx, 5xx) se propaga como excepción;

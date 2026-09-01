@@ -30,6 +30,8 @@ class OfferCard(BaseModel):
     calificacion_texto: str
     empatado: bool = False
     warnings: list[str] = []
+    image_url: str | None = None
+    link: str | None = None
 
 
 class ComposedResponse(BaseModel):
@@ -163,6 +165,8 @@ class ResponseComposer:
             calificacion_texto=_calificacion_texto(r.offer),
             empatado=any("empatado" in f for f in r.key_factors),
             warnings=pr.warnings,
+            image_url=r.offer.image_url,
+            link=r.offer.provenance.canonical_url,
         )
 
     def _buy_wait_text(self, result: OrchestrationResult) -> str | None:
