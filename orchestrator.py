@@ -27,7 +27,8 @@ from promotion_engine import PromotionEngine
 from pricing_engine import PricingEngine
 from ranking_engine import RankingEngine
 from buy_wait_engine import BuyWaitEngine
-from mock_adapters import MockSourceAAdapter, MockSourceBAdapter
+from mercadolibre_adapter import MercadoLibreAdapter
+from fravega_adapter import FravegaAdapter
 from mock_promotions import MockPromotionCatalog
 from search import SearchCriteria
 from domain import PaymentContext, PriceResult
@@ -83,9 +84,7 @@ class Orchestrator:
         self.intent_router = intent_router or _default_intent_router()
         self.task_planner = task_planner or TaskPlanner()
         self.policy_engine = policy_engine or PolicyEngine()
-        self.search_service = search_service or SearchService(
-            [MockSourceAAdapter(), MockSourceBAdapter()]
-        )
+        self.search_service = search_service or SearchService([MercadoLibreAdapter(), FravegaAdapter()])
         self.offer_normalizer = offer_normalizer or OfferNormalizer()
         self.promotion_engine = promotion_engine or PromotionEngine()
         self.pricing_engine = pricing_engine or PricingEngine()
@@ -163,6 +162,19 @@ class Orchestrator:
                     partes.append(f"#{item['rank']} {item['modelo']}{etiqueta}: {factores}")
                 msg = "Por qué recomendé cada opción:\n" + "\n".join(partes)
             return self._resultado_directo(intent, trace, msg)
+
+        # --- Alertas (H9) todavía no están implementadas. Antes esto caía
+        # en el flujo general de búsqueda (que no incluye SEARCH para esta
+        # intención) y terminaba mostrando "no encontré ofertas" - un
+        # mensaje falso y confuso, como si hubiera buscado y fallado,
+        # cuando en realidad ni siquiera lo intentó. Mejor ser honestos.
+        if intent.intent_type == IntentType.CREAR_ALERTA:
+            return self._resultado_directo(
+                intent, trace,
+                "Todavía no puedo crear alertas de precio (esa función está "
+                "planificada para más adelante). Por ahora podés volver a "
+                "preguntarme cuando quieras revisar precios de nuevo.",
+            )
 
         # --- H6/H7: continuidad de conversación. Lo dicho en ESTE mensaje
         # siempre pisa lo guardado; lo guardado solo rellena lo que falta.

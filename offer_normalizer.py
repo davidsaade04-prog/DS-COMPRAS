@@ -135,9 +135,151 @@ def _normalize_source_b(raw: dict, categoria: str, tier: SourceTier) -> Offer:
     )
 
 
+def _map_stock_mercadolibre(raw: dict) -> StockStatus:
+    qty = raw.get("available_quantity")
+    if qty is None:
+        return StockStatus.NO_CONFIRMADO
+    if qty <= 0:
+        return StockStatus.SIN_STOCK
+    if qty <= 3:
+        return StockStatus.LIMITADO
+    return StockStatus.DISPONIBLE
+
+
+def _normalize_mercadolibre(raw: dict, categoria: str, tier: SourceTier) -> Offer:
+    precio = Decimal(str(raw["price"]))
+
+    financing = []
+    installments = raw.get("installments") or {}
+    if installments.get("quantity"):
+        cuotas = installments["quantity"]
+        monto_cuota = Decimal(str(installments["amount"])) if installments.get("amount") else None
+        rate = installments.get("rate")
+        sin_interes = not rate or float(rate) == 0
+        financing.append(FinancingPlan(
+            cuotas=cuotas,
+            monto_cuota=monto_cuota,
+            sin_interes_declarado=sin_interes,
+            # Viene calculado por MercadoLibre, no lo derivamos nosotros -
+            # lo tratamos como confiable pero queda anotado el origen.
+            financing_verified=True,
+        ))
+
+    seller = raw.get("seller") or {}
+    # La búsqueda pública sin autenticación a veces no trae el nombre del
+    # vendedor, solo su ID - no inventamos un nombre, usamos un identificador.
+    seller_label = seller.get("nickname") or f"Vendedor MercadoLibre #{seller.get('id', '?')}"
+
+    shipping = raw.get("shipping") or {}
+    # free_shipping=False no significa que sepamos el costo real - solo
+    # confirmamos cuando es explícitamente gratis; si no, no confirmado
+    # (adenda 10.4.5: no inventar un costo de envío).
+    shipping_cost = Decimal("0") if shipping.get("free_shipping") else None
+
+    titulo = raw.get("title") or "Producto sin nombre"
+    item_id = str(raw.get("id") or uuid4())
+
+    return Offer(
+        offer_id=item_id,
+        product=Product(
+            product_id=item_id,
+            marca=titulo.split()[0] if titulo else "",
+            modelo=titulo,
+            categoria=categoria,
+        ),
+        seller=seller_label,
+        price=precio,
+        currency=raw.get("currency_id", "ARS"),
+        stock_status=_map_stock_mercadolibre(raw),
+        shipping_cost=shipping_cost,
+        shipping_eta_days=None,  # no viene en la búsqueda, solo en el detalle del item
+        financing=financing,
+        rating=None,  # la búsqueda pública no trae calificación - no se inventa
+        rating_count=None,
+        provenance=Provenance(
+            source_name="mercadolibre",
+            source_tier=tier,
+            source_timestamp=datetime.now(timezone.utc),
+            verification_status=VerificationStatus.VERIFICADO,
+            canonical_url=raw.get("permalink"),
+        ),
+    )
+
+
+def _map_stock_vtex(oferta: dict) -> StockStatus:
+    qty = oferta.get("AvailableQuantity")
+    if qty is None:
+        return StockStatus.NO_CONFIRMADO
+    if qty <= 0:
+        return StockStatus.SIN_STOCK
+    if qty <= 3:
+        return StockStatus.LIMITADO
+    return StockStatus.DISPONIBLE
+
+
+def _normalize_fravega(raw: dict, categoria: str, tier: SourceTier) -> Offer:
+    """
+    Formato VTEX: producto -> items[] (SKUs) -> sellers[] -> commertialOffer.
+    Tomamos el primer item/vendedor disponible - una tienda VTEX puede tener
+    más de un vendedor marketplace por producto, pero para el MVP simplificamos
+    al primero (documentado como limitación conocida).
+    """
+    item = (raw.get("items") or [{}])[0]
+    seller = (item.get("sellers") or [{}])[0]
+    oferta = seller.get("commertialOffer") or {}
+
+    precio = Decimal(str(oferta.get("Price", 0)))
+
+    financing = []
+    for plan in oferta.get("Installments") or []:
+        cuotas = plan.get("NumberOfInstallments")
+        if not cuotas:
+            continue
+        monto_cuota = Decimal(str(plan["Value"])) if plan.get("Value") else None
+        sin_interes = not plan.get("InterestRate") or float(plan["InterestRate"]) == 0
+        financing.append(FinancingPlan(
+            cuotas=cuotas, monto_cuota=monto_cuota,
+            sin_interes_declarado=sin_interes, financing_verified=True,
+        ))
+        break  # solo el primer plan de cuotas, para no saturar la respuesta
+
+    modelo = raw.get("productName", "Producto sin nombre")
+    seller_label = seller.get("sellerName") or "Frávega"
+
+    return Offer(
+        offer_id=str(raw.get("productId", uuid4())),
+        product=Product(
+            product_id=str(raw.get("productId", uuid4())),
+            marca=raw.get("brand", ""),
+            modelo=modelo,
+            categoria=categoria,
+        ),
+        seller=seller_label,
+        price=precio,
+        currency="ARS",
+        stock_status=_map_stock_vtex(oferta),
+        shipping_cost=None,  # VTEX no siempre trae costo de envío en la búsqueda
+        shipping_eta_days=None,
+        financing=financing,
+        rating=None,
+        rating_count=None,
+        provenance=Provenance(
+            source_name="fravega",
+            source_tier=tier,
+            source_timestamp=datetime.now(timezone.utc),
+            verification_status=VerificationStatus.VERIFICADO,
+            canonical_url=raw.get("link") or (
+                f"https://www.fravega.com/p/{raw.get('linkText')}" if raw.get("linkText") else None
+            ),
+        ),
+    )
+
+
 _MAPPERS = {
     "fuente_a_mock": _normalize_source_a,
     "fuente_b_mock": _normalize_source_b,
+    "mercadolibre": _normalize_mercadolibre,
+    "fravega": _normalize_fravega,
 }
 
 

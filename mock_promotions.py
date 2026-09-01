@@ -1,8 +1,18 @@
 """
-Catálogo mock de promociones (H4, conexión al Orquestador).
-Incluye a propósito: una promoción bien confirmable, una "de campaña" sin
-comercio especificado (debe dar NO_VERIFICADA - adenda 10.4.4), y una vencida
-(debe excluirse - V1.3 §16).
+Catálogo mock de promociones bancarias (H4). Sigue siendo simulado porque
+los bancos argentinos no publican una API pública de promociones vigentes -
+a diferencia de los productos (H con MercadoLibre real), esto no tiene una
+fuente real gratuita disponible.
+
+Cambio importante al conectar MercadoLibre real (búsqueda de productos):
+antes estas reglas apuntaban a un "comercio" inventado ("Fuente A mock") que
+coincidía a propósito con nuestra fuente simulada, dando promociones
+"confirmadas". Con vendedores REALES de MercadoLibre, no tenemos forma de
+verificar qué comercios participan realmente de una promoción bancaria -
+por eso ahora comercio=None en todas: quedan como NO_VERIFICADA en vez de
+CONFIRMADA (adenda 10.4.4: "campaña ≠ producto/comercio específico"). Es
+menos vistoso para una demo, pero es lo correcto: no inventamos una
+verificación que no tenemos.
 """
 
 from __future__ import annotations
@@ -24,7 +34,7 @@ _RULES_BY_CATEGORIA: dict[str, list[PromotionRule]] = {
             promotion_id="bna-nativa-electro-20",
             emisor_banco="Banco Nacion",
             medio_pago="Nativa",
-            comercio="Fuente A (mock)",
+            comercio=None,  # honesto: no podemos verificar comercios reales participantes
             categoria_o_producto="aire acondicionado",
             tipo_beneficio="reintegro",
             beneficio_pct=Decimal("20"),
@@ -49,7 +59,7 @@ _RULES_BY_CATEGORIA: dict[str, list[PromotionRule]] = {
             promotion_id="bna-nativa-celulares-vencida",
             emisor_banco="Banco Nacion",
             medio_pago="Nativa",
-            comercio="Fuente A (mock)",
+            comercio=None,
             categoria_o_producto="celular",
             tipo_beneficio="descuento_inmediato",
             beneficio_pct=Decimal("15"),
