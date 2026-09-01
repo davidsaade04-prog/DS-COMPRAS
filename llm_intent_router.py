@@ -20,7 +20,7 @@ import os
 from intent_router import IntentRouter, CRITICAL_FIELDS_BY_INTENT
 from orchestration import ExtractedIntent, IntentType
 
-_CATEGORIAS_VALIDAS = [
+_CATEGORIAS_EJEMPLO = [
     "celular", "aire acondicionado", "heladera", "lavarropas", "televisor",
     "notebook", "parlante", "cocina", "sillon", "cama", "mesa", "silla",
 ]
@@ -33,7 +33,15 @@ markdown) con esta forma exacta:
 {{
   "intent_type": uno de ["buscar_producto","explicar_recomendacion","gestionar_memoria_bancaria","consultar_memoria","borrar_memoria","crear_alerta","desconocida"],
   "entities": {{
-    "categoria": uno de {_CATEGORIAS_VALIDAS} (solo si aplica; omitir si no aplica),
+    "categoria": el tipo de producto que pidió, en 1 a 3 palabras, EN TEXTO \
+LIBRE (NO estás limitado a una lista fija - "depiladora", "termotanque", \
+"auriculares", "zapatillas", cualquier categoría real de producto es \
+válida). Ejemplos de referencia: {_CATEGORIAS_EJEMPLO} - pero cualquier \
+otro tipo de producto real también va acá, normalizado a su forma más \
+simple y genérica (ej: "quiero una depiladora para las piernas" ->
+categoria="depiladora", no "depiladora para las piernas" - esa frase más
+específica va en producto_especifico, no acá). Omitir SOLO si el mensaje
+no pide ningún producto (ej: consultas de memoria, quejas, saludos),
     "producto_especifico": el texto MÁS PRECISO posible de lo que el usuario \
 pidió, SOLO si es algo realmente buscable en una tienda: marca+modelo \
 ("Motorola Edge 70 Pro", "Samsung Galaxy S26") o una característica \
@@ -54,13 +62,13 @@ el nombre del comercio tal cual lo dijo. Omitir en cualquier otro caso,
   }}
 }}
 
-Normalizá sinónimos y jerga argentina a la categoría más parecida de la \
-lista (ej: "split", "equipo de aire" -> "aire acondicionado"; "teléfono", \
-"smartphone", "celu" -> "celular"; "compu", "laptop" -> "notebook"). \
-Si el mensaje no tiene que ver con ninguna categoría de la lista, omitir \
-"categoria" (NO inventar una). No inventes ningún campo que el usuario no \
-haya mencionado, ni resolver un intent_type distinto de "desconocida" si \
-el mensaje es ambiguo o no encaja en ninguna categoría clara.
+Normalizá sinónimos y jerga argentina a la forma más simple y estándar \
+del producto (ej: "split", "equipo de aire" -> "aire acondicionado"; \
+"teléfono", "smartphone", "celu" -> "celular"; "compu", "laptop" -> \
+"notebook"). Si el mensaje no pide ningún producto, omitir "categoria" \
+(NO inventar una). No inventes ningún campo que el usuario no haya \
+mencionado, ni resolver un intent_type distinto de "desconocida" si el \
+mensaje es ambiguo.
 
 Reglas para distinguir "consultar_memoria" de "buscar_producto" (esto se
 confunde fácil y hay que ser preciso):
