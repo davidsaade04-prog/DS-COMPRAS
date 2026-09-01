@@ -32,6 +32,7 @@ class OfferCard(BaseModel):
     warnings: list[str] = []
     image_url: str | None = None
     link: str | None = None
+    fuente: str | None = None
 
 
 class ComposedResponse(BaseModel):
@@ -86,6 +87,15 @@ def _calificacion_texto(offer) -> str:
         return "sin calificación disponible"
     extra = f" ({offer.rating_count} opiniones)" if offer.rating_count else ""
     return f"{offer.rating}/5{extra}"
+
+
+def _fuente_legible(source_name: str) -> str:
+    return {
+        "mercadolibre": "MercadoLibre",
+        "fravega": "Frávega",
+        "tienda_bna": "Tienda BNA",
+        "google_shopping": "Google Shopping",
+    }.get(source_name, source_name)
 
 
 class ResponseComposer:
@@ -167,6 +177,7 @@ class ResponseComposer:
             warnings=pr.warnings,
             image_url=r.offer.image_url,
             link=r.offer.provenance.canonical_url,
+            fuente=_fuente_legible(r.offer.provenance.source_name),
         )
 
     def _buy_wait_text(self, result: OrchestrationResult) -> str | None:

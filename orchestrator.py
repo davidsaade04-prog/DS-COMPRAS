@@ -29,6 +29,8 @@ from ranking_engine import RankingEngine
 from buy_wait_engine import BuyWaitEngine
 from mercadolibre_adapter import MercadoLibreAdapter
 from fravega_adapter import FravegaAdapter
+from tienda_bna_adapter import TiendaBNAAdapter
+from serpapi_adapter import SerpApiShoppingAdapter
 from mock_promotions import MockPromotionCatalog
 from search import SearchCriteria
 from domain import PaymentContext, PriceResult
@@ -84,7 +86,9 @@ class Orchestrator:
         self.intent_router = intent_router or _default_intent_router()
         self.task_planner = task_planner or TaskPlanner()
         self.policy_engine = policy_engine or PolicyEngine()
-        self.search_service = search_service or SearchService([MercadoLibreAdapter(), FravegaAdapter()])
+        self.search_service = search_service or SearchService(
+            [MercadoLibreAdapter(), FravegaAdapter(), TiendaBNAAdapter(), SerpApiShoppingAdapter()]
+        )
         self.offer_normalizer = offer_normalizer or OfferNormalizer()
         self.promotion_engine = promotion_engine or PromotionEngine()
         self.pricing_engine = pricing_engine or PricingEngine()
